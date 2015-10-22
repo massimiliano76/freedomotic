@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2009-2014 Freedomotic team http://freedomotic.com
+ * Copyright (c) 2009-2015 Freedomotic team http://freedomotic.com
  *
  * This file is part of Freedomotic
  *
@@ -39,6 +39,7 @@ import com.freedomotic.i18n.ComboLanguage;
 import com.freedomotic.i18n.I18n;
 import com.freedomotic.settings.Info;
 import java.awt.BorderLayout;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
@@ -49,6 +50,9 @@ import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
 import java.beans.PropertyVetoException;
 import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
@@ -172,7 +176,7 @@ public class MainWindow
                 }
             }
 
-            return false;
+            return false; 
         }
     }
 
@@ -528,6 +532,7 @@ public class MainWindow
         jMenuItem3 = new javax.swing.JMenuItem();
         mnuHelp = new javax.swing.JMenu();
         mnuTutorial = new javax.swing.JMenuItem();
+        jMenuItem1 = new javax.swing.JMenuItem();
         submnuHelp = new javax.swing.JMenuItem();
 
         jTextField1.setText("jTextField1");
@@ -846,6 +851,15 @@ public class MainWindow
         });
         mnuHelp.add(mnuTutorial);
 
+        jMenuItem1.setText(master.getApi().getI18n().msg("report_issue")
+        );
+        jMenuItem1.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItem1ActionPerformed(evt);
+            }
+        });
+        mnuHelp.add(jMenuItem1);
+
         submnuHelp.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F1, 0));
         submnuHelp.setText(i18n.msg("about"));
         submnuHelp.addActionListener(new java.awt.event.ActionListener() {
@@ -908,12 +922,13 @@ public class MainWindow
     private void mnuOpenEnvironmentActionPerformed(java.awt.event.ActionEvent evt)    {//GEN-FIRST:event_mnuOpenEnvironmentActionPerformed
         mnuSaveActionPerformed(null);
         final JFileChooser fc = new JFileChooser(Info.PATHS.PATH_DATA_FOLDER + "/furn/");
+        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         File file = null;
-        OpenDialogFileFilter filter = new OpenDialogFileFilter();
-        filter.addExtension("xenv");
-        filter.setDescription("Freedomotic XML Environment file");
-        fc.addChoosableFileFilter(filter);
-        fc.setFileFilter(filter);
+        // OpenDialogFileFilter filter = new OpenDialogFileFilter();
+        // filter.addExtension("xenv");
+        // filter.setDescription("Freedomotic XML Environment file");
+        // fc.addChoosableFileFilter(filter);
+        // fc.setFileFilter(filter);
 
         int returnVal = fc.showOpenDialog(this);
 
@@ -922,16 +937,13 @@ public class MainWindow
             LOG.info("Opening " + file.getAbsolutePath());
 
             try {
-                boolean loaded = master.getApi().environments().loadEnvironmentsFromDir(file.getParentFile(),
-                        false);
-
-                if (loaded) {
-                    mnuSelectEnvironmentActionPerformed(null);
-                }
-            } catch (Exception e) {
+                api.environments().init(file);
+                setEnvironment(api.environments().findAll().get(0));
+                mnuSelectEnvironmentActionPerformed(null);
+                
+            } catch (RepositoryException e) {
                 LOG.severe(Freedomotic.getStackTraceInfo(e));
             }
-
             setWindowedMode();
         } else {
             LOG.info(i18n.msg("canceled_by_user"));
@@ -1149,42 +1161,48 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
     }//GEN-LAST:event_mnuRoomBackgroundActionPerformed
 
     private void mnuNewEnvironmentActionPerformed(java.awt.event.ActionEvent evt)    {//GEN-FIRST:event_mnuNewEnvironmentActionPerformed
-
+        // we are about to make changes to environments: we'd better save current status
         mnuSaveActionPerformed(null);
         File oldEnv = api.environments().findAll().get(0).getSource();
 
         //creates a new environment coping it from a template
         File template
                 = new File(Info.PATHS.PATH_DATA_FOLDER + "/furn/templates/template-square/template-square.xenv");
+        
         LOG.info("Opening " + template.getAbsolutePath());
-        drawer.setCurrEnv(master.getApi().environments().findAll().get(0));
+        setEnvironment(api.environments().findAll().get(0));
 
         try {
-            boolean loaded = master.getApi().environments().loadEnvironmentsFromDir(template.getParentFile(),
-                    false);
+            
+            EnvironmentLogic enL = api.environments().loadEnvironmentFromFile(template);
 
-            if (loaded) {
+            if (enL != null) {
                 //EnvObjectPersistence.loadObjects(EnvironmentPersistence.getEnvironments().get(0).getObjectFolder(), false);
-                final JFileChooser fc = new JFileChooser(Info.PATHS.PATH_DATA_FOLDER + "/furn/");
+                final JFileChooser fc = new JFileChooser(oldEnv.getParentFile().getParentFile());
+                fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                fc.setDialogTitle(api.getI18n().msg("select_env_folder_save"));
+                fc.setSelectedFile(oldEnv.getParentFile());
                 int returnVal = fc.showSaveDialog(this);
 
                 if (returnVal == JFileChooser.APPROVE_OPTION) {
                     File folder = fc.getSelectedFile();
-
+                    
                     if (!folder.getName().isEmpty()) {
-                        EnvironmentLogic newenv = api.environments().findAll().get(0);
+                        if (! folder.getAbsolutePath().equalsIgnoreCase(oldEnv.getParentFile().getAbsolutePath())){
+                            // we are making a new environment set
+                            api.environments().deleteAll();
+                        }
+                        EnvironmentLogic newenv =api.environments().copy(enL);
                         newenv.setSource(
                                 new File(folder + "/" + newenv.getPojo().getUUID() + ".xenv"));
                         setEnvironment(newenv);
-                        //save the new environment
-                        master.getApi().environments().saveAs(newenv, folder);
+                        api.environments().saveAs(newenv, folder);    
                     }
                 } else {
                     LOG.info("Save command cancelled by user.");
                     //reload the old file
-                    master.getApi().environments().loadEnvironmentsFromDir(oldEnv.getParentFile(), false);
-
-                    setEnvironment(api.environments().findAll().get(0));
+                   api.environments().init(oldEnv.getParentFile());
+                   setEnvironment(api.environments().findAll().get(0));
                 }
             }
         } catch (Exception e) {
@@ -1200,7 +1218,7 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
                 = Info.PATHS.PATH_DATA_FOLDER + "/furn" + api.getConfig().getProperty("KEY_ROOM_XML_PATH");
 
         try {
-            master.getApi().environments().saveEnvironmentsToFolder(new File(environmentFilePath).getParentFile());
+            api.environments().saveEnvironmentsToFolder(new File(environmentFilePath).getParentFile());
         } catch (RepositoryException ex) {
             JOptionPane.showMessageDialog(this,
                     "Cannot save environment at "
@@ -1209,7 +1227,7 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
     }//GEN-LAST:event_mnuSaveActionPerformed
 
     private void mnuPluginConfigureActionPerformed(java.awt.event.ActionEvent evt)    {//GEN-FIRST:event_mnuPluginConfigureActionPerformed
-        new PluginConfigure(master.getApi());
+        new PluginConfigure(api);
     }//GEN-LAST:event_mnuPluginConfigureActionPerformed
 
     private void mnuTutorialActionPerformed(java.awt.event.ActionEvent evt)    {//GEN-FIRST:event_mnuTutorialActionPerformed
@@ -1245,19 +1263,19 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
 
     private void mnuAddDuplicateEnvironmentActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_mnuAddDuplicateEnvironmentActionPerformed
         EnvironmentLogic newEnv = api.environments().copy(drawer.getCurrEnv());
-        String input = JOptionPane.showInputDialog(i18n.msg("enter_new_name_for_env") + newEnv.getPojo().getName());
+        String input = JOptionPane.showInputDialog(this, i18n.msg("enter_new_name_for_env") + newEnv.getPojo().getName(), i18n.msg("environment_duplicate_popup_title"), JOptionPane.QUESTION_MESSAGE);
         if (input != null && !input.isEmpty()) {
             newEnv.getPojo().setName(input.trim());
             newEnv.setSource(new File(drawer.getCurrEnv().getSource().getParentFile() + "/" + newEnv.getPojo().getUUID() + ".xenv"));
             setEnvironment(api.environments().findOne(newEnv.getPojo().getUUID()));
         } else {
-            JOptionPane.showMessageDialog(this, i18n.msg("room_name_cannot_be_empty"), i18n.msg("room_rename_popup_title"), JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, i18n.msg("environment_name_cannot_be_empty"), i18n.msg("environment_rename_popup_title"), JOptionPane.ERROR_MESSAGE);
         }
         checkDeletableEnvironments();
     }//GEN-LAST:event_mnuAddDuplicateEnvironmentActionPerformed
 
     private void mnuRenameEnvironmentActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_mnuRenameEnvironmentActionPerformed
-        String input = JOptionPane.showInputDialog(this, i18n.msg("enter_new_name_for_env_X", new Object[]{drawer.getCurrEnv().getPojo().getName()}), i18n.msg("environment_rename_popup_title"), JOptionPane.QUESTION_MESSAGE);
+        String input = JOptionPane.showInputDialog(this, i18n.msg("enter_new_name_for_env", new Object[]{drawer.getCurrEnv().getPojo().getName()}), i18n.msg("environment_rename_popup_title"), JOptionPane.QUESTION_MESSAGE);
         if (input != null) {
             if (!input.isEmpty()) {
                 drawer.getCurrEnv().getPojo().setName(input.trim());
@@ -1355,6 +1373,26 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
     private void formWindowClosed(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_formWindowClosed
     }//GEN-LAST:event_formWindowClosed
 
+    private void jMenuItem1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem1ActionPerformed
+        // TODO add your handling code here:
+        String url = "https://goo.gl/CC65By";
+        if (Desktop.isDesktopSupported()) {
+            Desktop desktop = Desktop.getDesktop();
+            if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                try {
+                    URI uri = new URI(url); // url is a string containing the URL
+                    desktop.browse(uri);
+                } catch (IOException | URISyntaxException ex) {
+                    LOG.severe(ex.getLocalizedMessage());
+                }
+            }
+        }  
+        else {
+            //open popup with link
+            JOptionPane.showMessageDialog(this,i18n.msg("goto") + url);            
+        }
+    }//GEN-LAST:event_jMenuItem1ActionPerformed
+
     private void updateStrings() {
         mnuOpenNew.setText(i18n.msg("file"));
         mnuNewEnvironment.setText(i18n.msg("new") + i18n.msg("environment"));
@@ -1404,6 +1442,7 @@ private void jCheckBoxMarketActionPerformed(java.awt.event.ActionEvent evt) {//G
     private javax.swing.JMenu jMenu3;
     private javax.swing.JMenu jMenu4;
     private javax.swing.JMenu jMenu5;
+    private javax.swing.JMenuItem jMenuItem1;
     private javax.swing.JMenuItem jMenuItem3;
     private javax.swing.JMenuItem jMenuItem4;
     private javax.swing.JSeparator jSeparator1;

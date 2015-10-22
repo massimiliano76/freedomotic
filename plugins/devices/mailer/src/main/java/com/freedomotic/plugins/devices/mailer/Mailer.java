@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2009-2014 Freedomotic team http://freedomotic.com
+ * Copyright (c) 2009-2015 Freedomotic team http://freedomotic.com
  *
  * This file is part of Freedomotic
  *
@@ -46,7 +46,7 @@ public final class Mailer extends Protocol {
     private int sentMails;
 
     public Mailer() {
-        super("Mailer", "/mailer/mailer.xml");
+        super("Mailer", "/mailer/mailer-manifest.xml");
         addEventListener("app.event.sensor.messages.mail");
     }
 
